@@ -93,16 +93,26 @@ class ImporterSource(DescriptionBasedSource):
         for i, posting in enumerate(postings):
             if posting.account != self.account: continue
             if isinstance(posting.meta, dict):
-                posting.meta["source_desc"] = entry.narration
-                posting.meta["date"] = entry.date
-                break
+                # Added option to create uncleared postings.
+                if entry.meta.get('cleared', True):
+                    posting.meta["source_desc"] = entry.narration
+                    posting.meta["date"] = entry.date
+                    break
+                else:
+                    entry.meta.pop('cleared')
+                    break
             else:
                 to_mutate.append(i)
                 break
         for i in to_mutate:
             p = postings.pop(i)
-            p = Posting(p.account, p.units, p.cost, p.price, p.flag,
-                        {"source_desc":entry.narration, "date": entry.date})
+            # Added option to create uncleared postings.
+            if entry.meta.get('cleared', True):
+                p = Posting(p.account, p.units, p.cost, p.price, p.flag,
+                            {"source_desc": entry.narration, "date": entry.date})
+            else:
+                entry.meta.pop('cleared')
+                p = Posting(p.account, p.units, p.cost, p.price, p.flag, None)
             postings.insert(i, p)
 
     def _get_source_posting(self, entry:Transaction) -> Optional[Posting]:
@@ -151,15 +161,17 @@ def balance_amounts(txn:Transaction)-> None:
     for posting in txn.postings:
         inventory += get_weight(convert_costspec_to_cost(posting))
     for currency in inventory:
-        txn.postings.append(
-            Posting(
-                account=FIXME_ACCOUNT,
-                units=Amount(currency=currency, number=-inventory[currency]),
-                cost=None,
-                price=None,
-                flag=None,
-                meta={},
-            ))
+        # Added tolerance for bal
+        if abs(inventory[currency]) > 0.001:
+            txn.postings.append(
+                Posting(
+                    account=FIXME_ACCOUNT,
+                    units=Amount(currency=currency, number=-inventory[currency]),
+                    cost=None,
+                    price=None,
+                    flag=None,
+                    meta={},
+                ))
 
 
 def load(spec, log_status):

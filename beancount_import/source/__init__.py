@@ -137,7 +137,11 @@ class SourceResults:
 
     def add_account(self, account: str) -> None:
         """Indicates that the source is authoritative for `account`."""
-        self.accounts.add(account)
+        if type(account) == list:
+            for item in account:
+                self.accounts.add(item)
+        else:
+            self.accounts.add(account)
 
     def add_skip_training_account(self, account: str) -> None:
         """Ignore postings for `account` when building training examples.

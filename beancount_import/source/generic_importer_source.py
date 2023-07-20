@@ -16,7 +16,7 @@ import os
 from glob import glob
 from collections import OrderedDict
 import itertools
-from typing import Hashable, List, Dict, Optional, Union
+from typing import Hashable, List, Dict, Optional
 
 from beancount.core.data import Balance, Transaction, Posting,  Directive
 from beancount.core.amount import Amount
@@ -35,7 +35,7 @@ from .mint import _get_key_from_posting
 class ImporterSource(DescriptionBasedSource):
     def __init__(self,
                  directory: str,
-                 account: Union[str, list],
+                 account: str,
                  importer: ImporterProtocol,
                  **kwargs) -> None:
         super().__init__(**kwargs)
@@ -57,12 +57,8 @@ class ImporterSource(DescriptionBasedSource):
         return self.importer.name()
 
     def prepare(self, journal: 'JournalEditor', results: SourceResults) -> None:
-        try:
-            self.account_index
-        except AttributeError:
-            self.account_index = None
-
         results.add_account(self.account)
+
         entries = OrderedDict() #type: Dict[Hashable, List[Directive]]
         for f in self.files:
             f_entries = self.importer.extract(f, existing_entries=journal.entries)
@@ -84,7 +80,7 @@ class ImporterSource(DescriptionBasedSource):
         get_pending_and_invalid_entries(
             raw_entries=list(itertools.chain.from_iterable(entries.values())),
             journal_entries=journal.all_entries,
-            account_set=set([self.account]) if self.account_index is None else set([self.account[self.account_index]]),
+            account_set=set([self.account]),
             get_key_from_posting=_get_key_from_posting,
             get_key_from_raw_entry=self._get_key_from_imported_entry,
             make_import_result=self._make_import_result,
@@ -95,7 +91,8 @@ class ImporterSource(DescriptionBasedSource):
         postings = entry.postings #type: List[Posting]
         to_mutate = []
         for i, posting in enumerate(postings):
-            if posting.account not in self.account: continue
+            if posting.account != self.account:
+                continue
             if isinstance(posting.meta, dict):
                 posting.meta["source_desc"] = entry.narration
                 posting.meta["date"] = entry.date
@@ -110,17 +107,9 @@ class ImporterSource(DescriptionBasedSource):
             postings.insert(i, p)
 
     def _get_source_posting(self, entry:Transaction) -> Optional[Posting]:
-        self.account_index = None
         for posting in entry.postings:
-            if type(self.account) == list:
-                for i, acct in enumerate(self.account):
-                    if posting.account == acct:
-                        self.account_index = i
-                        return posting
-            else:
-                if posting.account == self.account:
-                    return posting
-        return None
+            if posting.account == self.account:
+                return posting
 
     def _get_key_from_imported_entry(self, entry:Directive) -> Hashable:
         if isinstance(entry, Balance):
@@ -130,16 +119,10 @@ class ImporterSource(DescriptionBasedSource):
         source_posting = self._get_source_posting(entry)
         if source_posting is None:
             raise ValueError("entry {} has no postings for account: {}".format(entry, self.account))
-        if not self.account_index is None:
-            return (self.account[self.account_index],
-                    entry.date,
-                    source_posting.units,
-                    entry.narration)
-        else:
-            return (self.account,
-                    entry.date,
-                    source_posting.units,
-                    entry.narration)
+        return (self.account,
+                entry.date,
+                source_posting.units,
+                entry.narration)
 
     def _make_import_result(self, imported_entry:Directive):
         if isinstance(imported_entry, Transaction): balance_amounts(imported_entry)
